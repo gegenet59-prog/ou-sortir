@@ -1,13 +1,16 @@
-# Publie le site sur GitHub Pages à chaque modification
+# Publie le site sur GitHub Pages à chaque modification,
+# et retélécharge chaque lundi la liste des bars et clubs de Lille
 name: Publication
 
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -23,6 +26,14 @@ jobs:
       url: ${{ steps.deploiement.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Télécharger les bars et clubs de Lille
+        run: python3 scripts/lieux_lille.py || echo "On garde la liste déjà enregistrée"
+      - name: Enregistrer la nouvelle liste dans le dépôt
+        run: |
+          if [ -n "$(git status --porcelain data)" ]; then
+            git config user.name "github-actions[bot]"; git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add data && git commit -m "Mise à jour des lieux de Lille [skip ci]" && git push || true
+          fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .

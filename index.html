@@ -223,11 +223,27 @@ function versLieu(e) {
            site: lien(t.website || t["contact:website"] || t.url || t["contact:instagram"] || t["contact:facebook"] || "") };
 }
 
+// ===== Liste préparée (métropole lilloise), téléchargée chaque semaine par GitHub =====
+const SORTES = { nightclub: "Club", pub: "Pub", biergarten: "Bar en plein air", bar: "Bar" };
+const LISTE_LILLE = fetch("data/lieux-lille.json").then(r => r.ok ? r.json() : null).catch(() => null);
+async function depuisListe(la, lo) {
+  const j = await LISTE_LILLE;
+  if (!j) return null;
+  const [s, o, n, e] = j.zone;
+  if (la < s || la > n || lo < o || lo > e) return null;     // hors de la zone : recherche en direct
+  const tous = j.lieux.map(([nom, sla, slo, type, adresse, horaires, tel, site]) =>
+    ({ nom, la: sla, lo: slo, club: type === "nightclub", sorte: SORTES[type] || "Bar", adresse, horaires, tel, site, d: distance(la, lo, sla, slo) }));
+  for (const r of [1500, 5000, 15000]) { const l = tous.filter(x => x.d <= r); if (l.length >= 10 || r === 15000) return l.sort((a, b) => a.d - b.d); }
+}
+
 async function chercher(la, lo, lieuTexte) {
   NB_AFFICHES = 15;
   $("resultats").innerHTML = "";
   $("statut").textContent = `Je cherche les bars et clubs ${lieuTexte ? "près de " + lieuTexte : "autour de toi"}…`;
   $("statut").classList.add("charge");
+  // 1. Liste déjà téléchargée : instantané, même avec peu de réseau
+  try { const l = await depuisListe(la, lo); if (l) { LIEUX = l; return afficher(); } } catch {}
+  // 2. Ailleurs : recherche en direct sur OpenStreetMap
   const lent = setTimeout(() => { $("statut").textContent = "Les serveurs OpenStreetMap sont lents, je patiente encore un peu…"; }, 7000);
   try {
     let elements = [];
@@ -372,6 +388,8 @@ $("filtres").addEventListener("click", e => {
   if (FILTRE === "ouvert") toast("Seuls les lieux avec horaires connus apparaissent.");
   if (LIEUX.length) afficher();
 });
+// ===== Garde l'appli et la liste en mémoire sur le téléphone (marche avec peu de réseau) =====
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>
