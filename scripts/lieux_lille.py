@@ -1,6 +1,6 @@
 # Télécharge tous les bars, pubs et clubs de la métropole lilloise (OpenStreetMap)
 # et les range dans data/lieux-lille.json, en format compact pour l'appli.
-import json, sys, time, urllib.request, urllib.parse
+import json, os, sys, time, urllib.request, urllib.parse
 
 ZONE = (50.52, 2.80, 50.82, 3.30)   # sud, ouest, nord, est : Métropole Européenne de Lille
 REQUETE = f"""[out:json][timeout:120];
@@ -40,5 +40,6 @@ for e in telecharger():
                   lien(t.get("website") or t.get("contact:website") or t.get("url") or t.get("contact:instagram") or t.get("contact:facebook"))])
 
 if len(lieux) < 100: sys.exit(f"Seulement {len(lieux)} lieux : résultat suspect, on garde l'ancienne liste")
+os.makedirs("data", exist_ok=True)
 json.dump({"zone": ZONE, "maj": time.strftime("%Y-%m-%d"), "lieux": lieux}, open("data/lieux-lille.json", "w"), ensure_ascii=False, separators=(",", ":"))
-print(len(lieux), "lieux enregistrés")
+print(len(lieux), "lieux enregistrés,", sum(l[3] == "nightclub" for l in lieux), "clubs,", sum(bool(l[5]) for l in lieux), "avec horaires")
