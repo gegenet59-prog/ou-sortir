@@ -172,6 +172,7 @@
   </div>
   <p class="sources">Données : <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© les contributeurs OpenStreetMap</a> (ODbL).<br>
     Les horaires peuvent manquer ou dater : vérifie sur Google avant d'y aller.</p>
+  <p class="sources" id="infoListe">Liste de Lille : chargement…</p>
   <p class="sources modere">L'abus d'alcool est dangereux pour la santé, à consommer avec modération.</p>
 </main>
 <script>
@@ -225,12 +226,14 @@ function versLieu(e) {
 
 // ===== Liste préparée (métropole lilloise), téléchargée chaque semaine par GitHub =====
 const SORTES = { nightclub: "Club", pub: "Pub", biergarten: "Bar en plein air", bar: "Bar" };
-const LISTE_LILLE = fetch("data/lieux-lille.json").then(r => r.ok ? r.json() : null).catch(() => null);
+const LISTE_LILLE = fetch("data/lieux-lille.json").then(r => r.ok ? r.json() : null).catch(() => null)
+  .then(j => { $("infoListe").textContent = j ? `Liste de Lille : ${j.lieux.length} lieux (mise à jour du ${j.maj.split("-").reverse().join("/")}) · v3` : "Liste de Lille non chargée · v3"; return j; });
 async function depuisListe(la, lo) {
   const j = await LISTE_LILLE;
   if (!j) return null;
   const [s, o, n, e] = j.zone;
-  if (la < s || la > n || lo < o || lo > e) return null;     // hors de la zone : recherche en direct
+  if (la < s || la > n || lo < o || lo > e) {               // hors de la zone : recherche en direct
+    $("statut").textContent = "Tu es hors de la métropole lilloise : recherche en direct sur OpenStreetMap…"; return null; }
   const tous = j.lieux.map(([nom, sla, slo, type, adresse, horaires, tel, site]) =>
     ({ nom, la: sla, lo: slo, club: type === "nightclub", sorte: SORTES[type] || "Bar", adresse, horaires, tel, site, d: distance(la, lo, sla, slo) }));
   for (const r of [1500, 5000, 15000]) { const l = tous.filter(x => x.d <= r); if (l.length >= 10 || r === 15000) return l.sort((a, b) => a.d - b.d); }
