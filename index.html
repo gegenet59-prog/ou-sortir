@@ -172,7 +172,7 @@
   </div>
   <p class="sources">Données : <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© les contributeurs OpenStreetMap</a> (ODbL).<br>
     Les horaires peuvent manquer ou dater : vérifie sur Google avant d'y aller.</p>
-  <p class="sources" id="infoListe">Liste de Lille : chargement…</p>
+  <p class="sources" id="infoListe">Liste des lieux : chargement…</p>
   <p class="sources modere">L'abus d'alcool est dangereux pour la santé, à consommer avec modération.</p>
 </main>
 <script>
@@ -224,19 +224,30 @@ function versLieu(e) {
            site: lien(t.website || t["contact:website"] || t.url || t["contact:instagram"] || t["contact:facebook"] || "") };
 }
 
-// ===== Liste préparée (métropole lilloise), téléchargée chaque semaine par GitHub =====
+// ===== Liste préparée (toute la France), découpée en carrés et retéléchargée chaque semaine par GitHub =====
 const SORTES = { nightclub: "Club", pub: "Pub", biergarten: "Bar en plein air", bar: "Bar" };
-const LISTE_LILLE = fetch("data/lieux-lille.json").then(r => r.ok ? r.json() : null).catch(() => null)
-  .then(j => { $("infoListe").textContent = j ? `Liste de Lille : ${j.lieux.length} lieux (mise à jour du ${j.maj.split("-").reverse().join("/")}) · v3` : "Liste de Lille non chargée · v3"; return j; });
+const TUILES = new Map();
+const INDEX = fetch("data/index.json").then(r => r.ok ? r.json() : null).catch(() => null)
+  .then(j => { $("infoListe").textContent = j ? `${j.total.toLocaleString("fr-FR")} lieux en France (mise à jour du ${j.maj.split("-").reverse().join("/")}) · v4` : "Liste des lieux non chargée · v4";
+               return j && { ...j, tuiles: new Set(j.tuiles) }; });
 async function depuisListe(la, lo) {
-  const j = await LISTE_LILLE;
-  if (!j) return null;
-  const [s, o, n, e] = j.zone;
-  if (la < s || la > n || lo < o || lo > e) {               // hors de la zone : recherche en direct
-    $("statut").textContent = "Tu es hors de la métropole lilloise : recherche en direct sur OpenStreetMap…"; return null; }
-  const tous = j.lieux.map(([nom, sla, slo, type, adresse, horaires, tel, site]) =>
-    ({ nom, la: sla, lo: slo, club: type === "nightclub", sorte: SORTES[type] || "Bar", adresse, horaires, tel, site, d: distance(la, lo, sla, slo) }));
-  for (const r of [1500, 5000, 15000]) { const l = tous.filter(x => x.d <= r); if (l.length >= 10 || r === 15000) return l.sort((a, b) => a.d - b.d); }
+  const idx = await INDEX;
+  if (!idx) return null;
+  const tuile = c => { if (!TUILES.has(c)) TUILES.set(c, fetch(`data/tuiles/${c}.json`).then(r => r.json()).catch(() => { TUILES.delete(c); return []; })); return TUILES.get(c); };
+  for (const r of [1500, 5000, 15000]) {
+    const p = idx.pas, dla = r / 111320, dlo = dla / Math.cos(la * Math.PI / 180), cles = [];
+    for (let i = Math.floor((la - dla) / p); i <= Math.floor((la + dla) / p); i++)
+      for (let j = Math.floor((lo - dlo) / p); j <= Math.floor((lo + dlo) / p); j++) if (idx.tuiles.has(`${i}_${j}`)) cles.push(`${i}_${j}`);
+    if (!cles.length) {                                        // aucun lieu connu ici (étranger…) : recherche en direct
+      if (r === 15000) { $("statut").textContent = "Zone non couverte par la liste : recherche en direct sur OpenStreetMap…"; return null; }
+      continue;
+    }
+    const l = (await Promise.all(cles.map(tuile))).flat()
+      .map(([nom, sla, slo, type, adresse, horaires, tel, site]) =>
+        ({ nom, la: sla, lo: slo, club: type === "nightclub", sorte: SORTES[type] || "Bar", adresse, horaires, tel, site, d: distance(la, lo, sla, slo) }))
+      .filter(x => x.d <= r);
+    if (l.length >= 10 || r === 15000) return l.sort((a, b) => a.d - b.d);
+  }
 }
 
 async function chercher(la, lo, lieuTexte) {
@@ -245,7 +256,7 @@ async function chercher(la, lo, lieuTexte) {
   $("statut").textContent = `Je cherche les bars et clubs ${lieuTexte ? "près de " + lieuTexte : "autour de toi"}…`;
   $("statut").classList.add("charge");
   // 1. Liste déjà téléchargée : instantané, même avec peu de réseau
-  try { const l = await depuisListe(la, lo); if (l) { LIEUX = l; return afficher(); } } catch {}
+  try { const l = await depuisListe(la, lo); if (l && l.length) { LIEUX = l; return afficher(); } } catch {}
   // 2. Ailleurs : recherche en direct sur OpenStreetMap
   const lent = setTimeout(() => { $("statut").textContent = "Les serveurs OpenStreetMap sont lents, je patiente encore un peu…"; }, 7000);
   try {
