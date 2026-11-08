@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Télécharger les bars et clubs de France
         run: python3 scripts/lieux_france.py || echo "On garde la liste déjà enregistrée"
-        timeout-minutes: 45
+        timeout-minutes: 90
       - name: Enregistrer la nouvelle liste dans le dépôt
         run: |
           if [ -n "$(git status --porcelain data)" ]; then

@@ -3,26 +3,45 @@
 import json, math, os, shutil, sys, time, urllib.request, urllib.parse
 
 PAS = 0.25   # taille d'un carré en degrés (~28 km x 18 km)
-REQUETE = """[out:json][timeout:900][maxsize:1073741824];
-area["ISO3166-1"="FR"][admin_level=2]->.fr;
-nwr["amenity"~"^(bar|pub|biergarten|nightclub)$"](area.fr);
+# La France est demandée morceau par morceau (une seule grosse demande fait abandonner les serveurs)
+FRANCE = (41.3, -5.2, 51.15, 9.6)   # sud, ouest, nord, est (métropole + Corse, débords frontaliers inclus)
+MORCEAU = 1.5                        # taille d'un morceau en degrés
+def requete(s, o, n, e):
+    return f"""[out:json][timeout:180];
+nwr["amenity"~"^(bar|pub|biergarten|nightclub)$"]({s},{o},{n},{e});
 out center tags;"""
 SERVEURS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter"]
 
-def telecharger():
-    for essai in range(3):
-        for s in SERVEURS:
+def demander(q):
+    for essai in range(4):
+        for srv in SERVEURS:
             try:
-                print("Essai", s, flush=True)
-                req = urllib.request.Request(s, data=urllib.parse.urlencode({"data": REQUETE}).encode(),
+                req = urllib.request.Request(srv, data=urllib.parse.urlencode({"data": q}).encode(),
                                              headers={"User-Agent": "ou-sortir (GitHub Actions)"})
-                with urllib.request.urlopen(req, timeout=1000) as r:
+                with urllib.request.urlopen(req, timeout=240) as r:
                     return json.load(r)["elements"]
             except Exception as e:
-                print("Échec", s, e, flush=True)
-        time.sleep(60)
-    sys.exit("Aucun serveur OpenStreetMap n'a répondu")
+                print("  échec", srv, e, flush=True)
+                time.sleep(5)
+        time.sleep(30)
+    return None
+
+def telecharger():
+    tout, rates, morceaux = [], 0, []
+    la = FRANCE[0]
+    while la < FRANCE[2]:
+        lo = FRANCE[1]
+        while lo < FRANCE[3]:
+            morceaux.append((la, lo, min(la + MORCEAU, FRANCE[2]), min(lo + MORCEAU, FRANCE[3]))); lo += MORCEAU
+        la += MORCEAU
+    for i, m in enumerate(morceaux, 1):
+        el = demander(requete(*m))
+        if el is None: rates += 1; print(f"Morceau {i}/{len(morceaux)} RATÉ", flush=True); continue
+        print(f"Morceau {i}/{len(morceaux)} : {len(el)} lieux", flush=True)
+        tout += el; time.sleep(2)
+    if rates > 2: sys.exit(f"{rates} morceaux ratés : on garde l'ancienne liste")
+    return tout
 
 def lien(u):
     u = (u or "").split(";")[0].strip()
