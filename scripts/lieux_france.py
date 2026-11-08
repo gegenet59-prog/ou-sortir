@@ -1,6 +1,7 @@
 # Télécharge tous les bars, pubs et clubs de France (OpenStreetMap), puis les range
 # en petits carrés (« tuiles ») : le téléphone ne charge que le coin où l'on se trouve.
 import json, math, os, shutil, sys, time, urllib.request, urllib.parse
+from tri_ambiance import categorie
 
 PAS = 0.25   # taille d'un carré en degrés (~28 km x 18 km)
 # La France est demandée morceau par morceau (une seule grosse demande fait abandonner les serveurs)
@@ -59,6 +60,9 @@ for e in telecharger():
     lieu = [t["name"], round(la, 6), round(lo, 6), t["amenity"], adresse, t.get("opening_hours", ""),
             t.get("phone") or t.get("contact:phone", ""),
             lien(t.get("website") or t.get("contact:website") or t.get("url") or t.get("contact:instagram") or t.get("contact:facebook"))]
+    cat = categorie(t["name"], t["amenity"], t.get("opening_hours", ""), t)
+    if not cat: continue                      # bar-tabac, PMU… : retiré
+    lieu.append(cat)
     tuiles.setdefault(f"{math.floor(la / PAS)}_{math.floor(lo / PAS)}", []).append(lieu)
     total += 1
 
@@ -70,5 +74,5 @@ json.dump({"pas": PAS, "maj": time.strftime("%Y-%m-%d"), "total": total, "tuiles
           open("data/index.json", "w"), separators=(",", ":"))
 taille = sum(os.path.getsize(f"data/tuiles/{k}.json") for k in tuiles)
 print(f"{total} lieux enregistrés dans {len(tuiles)} carrés ({taille // 1024} Ko),",
-      sum(l[3] == "nightclub" for v in tuiles.values() for l in v), "clubs,",
+      sum(l[8] in ("club", "disco") for v in tuiles.values() for l in v), "clubs,", sum(l[8] == "dansant" for v in tuiles.values() for l in v), "dansants,",
       sum(bool(l[5]) for v in tuiles.values() for l in v), "avec horaires")

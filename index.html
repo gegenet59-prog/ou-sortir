@@ -164,6 +164,7 @@
     <button data-f="bar">Bars</button>
     <button data-f="club">Clubs</button>
     <button data-f="ouvert">● Ouvert</button>
+    <button id="autres">+ Autres bars</button>
   </div>
   <div id="statut"></div>
   <div id="resultats">
@@ -184,7 +185,7 @@ const REQUETE = (r, la, lo) => `[out:json][timeout:15];(
 );out center tags;`;
 const SERVEURS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
 
-let LIEUX = [], FILTRE = "tous", NB_AFFICHES = 15;
+let LIEUX = [], FILTRE = "tous", NB_AFFICHES = 15, AUTRES = false;   // AUTRES : afficher aussi les bars sans ambiance repérée
 
 function toast(t) { const e = $("toast"); e.textContent = t; e.classList.add("visible"); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove("visible"), 2500); }
 function echapper(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
@@ -226,9 +227,10 @@ function versLieu(e) {
 
 // ===== Liste préparée (toute la France), découpée en carrés et retéléchargée chaque semaine par GitHub =====
 const SORTES = { nightclub: "Club", pub: "Pub", biergarten: "Bar en plein air", bar: "Bar" };
+const NOM_CAT = { club: "Club", disco: "Discothèque", dansant: "Bar dansant", autre: "Bar" };
 const TUILES = new Map();
 const INDEX = fetch("data/index.json").then(r => r.ok ? r.json() : null).catch(() => null)
-  .then(j => { $("infoListe").textContent = j ? `${j.total.toLocaleString("fr-FR")} lieux en France (mise à jour du ${j.maj.split("-").reverse().join("/")}) · v4` : "Liste des lieux non chargée · v4";
+  .then(j => { $("infoListe").textContent = j ? `${j.total.toLocaleString("fr-FR")} lieux en France (mise à jour du ${j.maj.split("-").reverse().join("/")}) · v5` : "Liste des lieux non chargée · v5";
                return j && { ...j, tuiles: new Set(j.tuiles) }; });
 async function depuisListe(la, lo) {
   const idx = await INDEX;
@@ -243,8 +245,9 @@ async function depuisListe(la, lo) {
       continue;
     }
     const l = (await Promise.all(cles.map(tuile))).flat()
-      .map(([nom, sla, slo, type, adresse, horaires, tel, site]) =>
-        ({ nom, la: sla, lo: slo, club: type === "nightclub", sorte: SORTES[type] || "Bar", adresse, horaires, tel, site, d: distance(la, lo, sla, slo) }))
+      .map(([nom, sla, slo, type, adresse, horaires, tel, site, cat]) =>
+        ({ nom, la: sla, lo: slo, club: type === "nightclub", cat, sorte: NOM_CAT[cat] || (type === "pub" ? "Pub" : SORTES[type] || "Bar"),
+           adresse, horaires, tel, site, d: distance(la, lo, sla, slo) }))
       .filter(x => x.d <= r);
     if (l.length >= 10 || r === 15000) return l.sort((a, b) => a.d - b.d);
   }
@@ -347,11 +350,13 @@ const ICO = {
 function distanceCourt(d) { return d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1).replace(".", ",")} km`; }
 function afficher() {
   $("statut").classList.remove("charge");
-  const liste = LIEUX.filter(s => FILTRE === "tous" || (FILTRE === "bar" ? !s.club : FILTRE === "club" ? s.club : ouvertMaintenant(s.horaires) === true));
+  const visibles = LIEUX.filter(s => AUTRES || s.cat !== "autre");
+  const liste = visibles.filter(s => FILTRE === "tous" || (FILTRE === "bar" ? !s.club : FILTRE === "club" ? s.club : ouvertMaintenant(s.horaires) === true));
   if (!LIEUX.length) { $("statut").textContent = "Aucun bar ni club trouvé dans le coin."; $("resultats").innerHTML = ""; return; }
-  const nbOuverts = LIEUX.filter(s => ouvertMaintenant(s.horaires) === true).length;
+  const nbAutres = LIEUX.filter(s => s.cat === "autre").length;
+  const nbOuverts = visibles.filter(s => ouvertMaintenant(s.horaires) === true).length;
   $("statut").textContent = !liste.length ? (FILTRE === "ouvert" ? "Aucun lieu ouvert connu (beaucoup n'ont pas d'horaires renseignés)." : "Rien pour ce filtre.")
-    : `${liste.length} lieu${liste.length > 1 ? "x" : ""}${FILTRE === "tous" && nbOuverts ? ` · ${nbOuverts} ouvert${nbOuverts > 1 ? "s" : ""} maintenant` : ""}, du plus proche au plus loin`;
+    : `${liste.length} lieu${liste.length > 1 ? "x" : ""}${FILTRE === "tous" && nbOuverts ? ` · ${nbOuverts} ouvert${nbOuverts > 1 ? "s" : ""} maintenant` : ""}, du plus proche au plus loin${!AUTRES && nbAutres ? ` · ${nbAutres} bars de quartier masqués` : ""}`;
   $("resultats").innerHTML = liste.slice(0, NB_AFFICHES).map((s, i) => {
     const o = ouvertMaintenant(s.horaires);
     const etat = o === true ? `<span class="pastille ouvert">Ouvert</span>` : o === false ? `<span class="pastille ferme">Fermé</span>` : "";
@@ -397,8 +402,13 @@ $("formulaire").addEventListener("submit", async e => {
 });
 $("filtres").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
+  if (b.id === "autres") {
+    AUTRES = !AUTRES; b.classList.toggle("actif", AUTRES); b.textContent = AUTRES ? "− Autres bars" : "+ Autres bars";
+    toast(AUTRES ? "Tous les bars sont affichés, même les bars de quartier." : "Seulement les clubs et les bars d'ambiance.");
+    if (LIEUX.length) afficher(); return;
+  }
   FILTRE = b.dataset.f;
-  document.querySelectorAll("#filtres button").forEach(x => x.classList.toggle("actif", x === b));
+  document.querySelectorAll("#filtres button[data-f]").forEach(x => x.classList.toggle("actif", x === b));
   if (FILTRE === "ouvert") toast("Seuls les lieux avec horaires connus apparaissent.");
   if (LIEUX.length) afficher();
 });
