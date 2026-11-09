@@ -1,5 +1,5 @@
 // Mémoire de l'appli : on affiche tout de suite la version gardée, et on la rafraîchit en arrière-plan
-const CACHE = "ou-sortir-v5";
+const CACHE = "ou-sortir-v6";
 const FICHIERS = ["./", "index.html", "manifest.json", "icone-192.png", "icone-512.png", "data/index.json"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FICHIERS).catch(() => {}))); self.skipWaiting(); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x))))); self.clients.claim(); });

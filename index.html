@@ -78,6 +78,17 @@
                      background:linear-gradient(90deg, transparent, rgba(255,255,255,.65), transparent); animation:reflet 3.5s ease-in-out infinite; }
   @keyframes reflet { 0%,55% { left:-60%; } 100% { left:130%; } }
   #gps:active, #ok:active { transform:scale(.98); }
+  /* Bascule Sortir / Manger */
+  #modes { display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:12px; padding:4px; border-radius:16px; background:rgba(12,10,12,.6);
+           border:1px solid var(--ligne); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  #modes button { padding:12px; border-radius:12px; background:transparent; color:#cfc4ae; font-family:var(--titre); font-size:12px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; }
+  #modes button.actif { background:rgba(230,194,122,.16); color:var(--champ); box-shadow:inset 0 0 0 1px rgba(230,194,122,.45); }
+  body.mode-manger #modes button.actif { background:rgba(255,138,61,.16); color:#ffd2b0; box-shadow:inset 0 0 0 1px rgba(255,138,61,.5); }
+  body.mode-manger .f-sortir, body:not(.mode-manger) .f-manger { display:none; }
+  body.mode-manger #filtres button.actif { background:#ff8a3d; border-color:#ff8a3d; color:#1a0d04; }
+  .lieu.resto { --c:#ff8a3d; }
+  .lieu.fastfood { --c:#ffd23d; }
+  .lieu.resto .actions a.site, .lieu.fastfood .actions a.site { background:var(--c); border-color:var(--c); color:#1a0d04; }
   #filtres { display:flex; gap:8px; overflow-x:auto; padding:18px 2px 4px; scrollbar-width:none; }
   #filtres::-webkit-scrollbar { display:none; }
   #filtres button { flex:none; background:rgba(12,10,12,.55); color:#e4dac8; border:1px solid var(--ligne); padding:9px 16px; border-radius:999px;
@@ -159,17 +170,25 @@
     </form>
     <button id="gps"><span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>Autour de moi</span></button>
   </section>
+  <div id="modes" role="tablist">
+    <button data-m="sortir" class="actif" role="tab">🍸 Sortir</button>
+    <button data-m="manger" role="tab">🍔 Manger</button>
+  </div>
   <div id="filtres">
-    <button data-f="tous" class="actif">Tous</button>
-    <button data-f="bar">Bars</button>
-    <button data-f="club">Clubs</button>
-    <button data-f="ouvert">● Ouvert</button>
-    <button id="autres">+ Autres bars</button>
+    <button class="f-sortir actif" data-f="tous">Tous</button>
+    <button class="f-sortir" data-f="bar">Bars</button>
+    <button class="f-sortir" data-f="club">Clubs</button>
+    <button class="f-sortir" data-f="ouvert">● Ouvert</button>
+    <button class="f-sortir" id="autres">+ Autres bars</button>
+    <button class="f-manger" data-f="avant">Avant de sortir</button>
+    <button class="f-manger" data-f="nuit">🌙 Fringale de nuit</button>
+    <button class="f-manger" data-f="resto">Restos</button>
+    <button class="f-manger" data-f="fastfood">Fast-food</button>
   </div>
   <div id="statut"></div>
   <div id="resultats">
     <div class="vide"><div class="sceau">OS</div>
-      <h2>Ce soir, on sort où ?</h2><p>Touche <b>Autour de moi</b> ou tape une ville.<br>Bars, pubs et boîtes de nuit, du plus proche au plus loin.</p></div>
+      <h2 id="videTitre">Ce soir, on sort où ?</h2><p id="videTexte">Touche <b>Autour de moi</b> ou tape une ville.<br>Bars, pubs et boîtes de nuit, du plus proche au plus loin.</p></div>
   </div>
   <p class="sources">Données : <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© les contributeurs OpenStreetMap</a> (ODbL).<br>
     Les horaires peuvent manquer ou dater : vérifie sur Google avant d'y aller.</p>
@@ -185,7 +204,7 @@ const REQUETE = (r, la, lo) => `[out:json][timeout:15];(
 );out center tags;`;
 const SERVEURS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
 
-let LIEUX = [], FILTRE = "tous", NB_AFFICHES = 15, AUTRES = false;   // AUTRES : afficher aussi les bars sans ambiance repérée
+let LIEUX = [], FILTRE = "tous", NB_AFFICHES = 15, AUTRES = false, MODE = "sortir", POS = null;   // AUTRES : afficher aussi les bars sans ambiance repérée
 
 function toast(t) { const e = $("toast"); e.textContent = t; e.classList.add("visible"); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove("visible"), 2500); }
 function echapper(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
@@ -230,7 +249,7 @@ const SORTES = { nightclub: "Club", pub: "Pub", biergarten: "Bar en plein air", 
 const NOM_CAT = { club: "Club", disco: "Discothèque", dansant: "Bar dansant", autre: "Bar" };
 const TUILES = new Map();
 const INDEX = fetch("data/index.json").then(r => r.ok ? r.json() : null).catch(() => null)
-  .then(j => { $("infoListe").textContent = j ? `${j.total.toLocaleString("fr-FR")} lieux en France (mise à jour du ${j.maj.split("-").reverse().join("/")}) · v5` : "Liste des lieux non chargée · v5";
+  .then(j => { $("infoListe").textContent = j ? `${j.total.toLocaleString("fr-FR")} lieux en France (mise à jour du ${j.maj.split("-").reverse().join("/")}) · v6` : "Liste des lieux non chargée · v6";
                return j && { ...j, tuiles: new Set(j.tuiles) }; });
 async function depuisListe(la, lo) {
   const idx = await INDEX;
@@ -253,8 +272,35 @@ async function depuisListe(la, lo) {
   }
 }
 
+// ===== Onglet « Manger » : restos et fast-foods de la métropole lilloise =====
+const CUISINES = { pizza:"Pizzeria", burger:"Burgers", kebab:"Kebab", sushi:"Sushi", japanese:"Japonais", chinese:"Chinois", vietnamese:"Vietnamien",
+  thai:"Thaï", indian:"Indien", italian:"Italien", french:"Français", regional:"Cuisine du Nord", asian:"Asiatique", lebanese:"Libanais",
+  turkish:"Turc", moroccan:"Marocain", mexican:"Mexicain", american:"Américain", crepe:"Crêperie", sandwich:"Sandwichs", chicken:"Poulet",
+  tacos:"Tacos", french_tacos:"Tacos", bagel:"Bagels", seafood:"Fruits de mer", steak_house:"Grill", grill:"Grill", korean:"Coréen",
+  greek:"Grec", spanish:"Espagnol", portuguese:"Portugais", african:"Africain", vegan:"Vegan", vegetarian:"Végétarien", brasserie:"Brasserie",
+  friture:"Friterie", fries:"Friterie", noodle:"Nouilles", ramen:"Ramen", poke:"Poké", salad:"Salades", bistro:"Bistrot", tapas:"Tapas",
+  middle_eastern:"Oriental", couscous:"Couscous", ice_cream:"Glaces", coffee_shop:"Café", breakfast:"Petit-déj", barbecue:"Barbecue" };
+const RESTOS = fetch("data/restos-lille.json").then(r => r.ok ? r.json() : null).catch(() => null);
+async function chercherRestos(la, lo) {
+  const j = await RESTOS;
+  if (!j) return "Liste des restos pas encore disponible, réessaie dans un moment.";
+  const [s, o, n, e] = j.zone;
+  if (la < s || la > n || lo < o || lo > e) return "Les restos ne sont disponibles que dans la métropole lilloise pour l'instant.";
+  const tous = j.lieux.map(([nom, sla, slo, type, adresse, horaires, tel, site, cuisine]) =>
+    ({ nom, la: sla, lo: slo, type, cat: type, sorte: CUISINES[cuisine] || (type === "fast_food" ? "Fast-food" : "Restaurant"),
+       adresse, horaires, tel, site, d: distance(la, lo, sla, slo) }));
+  for (const r of [1000, 3000, 10000, 30000]) { const l = tous.filter(x => x.d <= r); if (l.length >= 15 || r === 30000) { LIEUX = l.sort((a, b) => a.d - b.d); break; } }
+  return null;
+}
+
 async function chercher(la, lo, lieuTexte) {
-  NB_AFFICHES = 15;
+  NB_AFFICHES = 15; POS = { la, lo, lieuTexte };
+  if (MODE === "manger") {
+    $("resultats").innerHTML = "";
+    const pb = await chercherRestos(la, lo);
+    if (pb) { LIEUX = []; $("statut").classList.remove("charge"); $("statut").textContent = pb; return; }
+    return afficher();
+  }
   $("resultats").innerHTML = "";
   $("statut").textContent = `Je cherche les bars et clubs ${lieuTexte ? "près de " + lieuTexte : "autour de toi"}…`;
   $("statut").classList.add("charge");
@@ -350,18 +396,28 @@ const ICO = {
 function distanceCourt(d) { return d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1).replace(".", ",")} km`; }
 function afficher() {
   $("statut").classList.remove("charge");
-  const visibles = LIEUX.filter(s => AUTRES || s.cat !== "autre");
-  const liste = visibles.filter(s => FILTRE === "tous" || (FILTRE === "bar" ? !s.club : FILTRE === "club" ? s.club : ouvertMaintenant(s.horaires) === true));
-  if (!LIEUX.length) { $("statut").textContent = "Aucun bar ni club trouvé dans le coin."; $("resultats").innerHTML = ""; return; }
+  const manger = MODE === "manger";
+  const visibles = manger ? LIEUX : LIEUX.filter(s => AUTRES || s.cat !== "autre");
+  let liste;
+  if (manger) {
+    liste = LIEUX.filter(s => FILTRE === "resto" ? s.type === "restaurant" : FILTRE === "fastfood" ? s.type === "fast_food"
+                            : FILTRE === "nuit" ? ouvertMaintenant(s.horaires) === true : true);
+    if (FILTRE === "nuit") liste.sort((a, b) => (a.type === "fast_food" ? 0 : 1) - (b.type === "fast_food" ? 0 : 1) || a.d - b.d);  // fast-foods en tête
+  } else liste = visibles.filter(s => FILTRE === "tous" || (FILTRE === "bar" ? !s.club : FILTRE === "club" ? s.club : ouvertMaintenant(s.horaires) === true));
+  if (!LIEUX.length) { $("statut").textContent = manger ? "Aucun resto trouvé dans le coin." : "Aucun bar ni club trouvé dans le coin."; $("resultats").innerHTML = ""; return; }
   const nbAutres = LIEUX.filter(s => s.cat === "autre").length;
   const nbOuverts = visibles.filter(s => ouvertMaintenant(s.horaires) === true).length;
+  if (manger) {
+    $("statut").textContent = !liste.length ? (FILTRE === "nuit" ? "Rien d'ouvert connu autour de toi en ce moment (beaucoup n'ont pas d'horaires renseignés)." : "Rien pour ce filtre.")
+      : `${liste.length} ${FILTRE === "fastfood" ? "fast-food" : "resto"}${liste.length > 1 ? "s" : ""}${FILTRE === "nuit" ? ` ouvert${liste.length > 1 ? "s" : ""} maintenant, fast-foods en tête` : nbOuverts ? ` · ${nbOuverts} ouvert${nbOuverts > 1 ? "s" : ""} maintenant` : ""}${FILTRE === "nuit" ? "" : ", du plus proche au plus loin"}`;
+  } else
   $("statut").textContent = !liste.length ? (FILTRE === "ouvert" ? "Aucun lieu ouvert connu (beaucoup n'ont pas d'horaires renseignés)." : "Rien pour ce filtre.")
     : `${liste.length} lieu${liste.length > 1 ? "x" : ""}${FILTRE === "tous" && nbOuverts ? ` · ${nbOuverts} ouvert${nbOuverts > 1 ? "s" : ""} maintenant` : ""}, du plus proche au plus loin${!AUTRES && nbAutres ? ` · ${nbAutres} bars de quartier masqués` : ""}`;
   $("resultats").innerHTML = liste.slice(0, NB_AFFICHES).map((s, i) => {
     const o = ouvertMaintenant(s.horaires);
     const etat = o === true ? `<span class="pastille ouvert">Ouvert</span>` : o === false ? `<span class="pastille ferme">Fermé</span>` : "";
     const google = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${s.nom} ${s.adresse}`.trim())}`;
-    return `<article class="lieu ${s.club ? "club" : ""} ${o === true ? "ouvert" : o === false ? "ferme" : ""}" style="animation-delay:${Math.min(i, 8) * 40}ms">
+    return `<article class="lieu ${s.club ? "club" : ""} ${s.type === "fast_food" ? "fastfood" : s.type === "restaurant" ? "resto" : ""} ${o === true ? "ouvert" : o === false ? "ferme" : ""}" style="animation-delay:${Math.min(i, 8) * 40}ms">
       <div class="tete">
         <div><h3>${echapper(s.nom)}</h3>
           <div class="meta"><span class="pastille dist">${distanceCourt(s.d)}</span>
@@ -408,9 +464,23 @@ $("filtres").addEventListener("click", e => {
     if (LIEUX.length) afficher(); return;
   }
   FILTRE = b.dataset.f;
+  if (FILTRE === "nuit") toast("Seuls les restos avec horaires connus et ouverts maintenant apparaissent.");
   document.querySelectorAll("#filtres button[data-f]").forEach(x => x.classList.toggle("actif", x === b));
   if (FILTRE === "ouvert") toast("Seuls les lieux avec horaires connus apparaissent.");
   if (LIEUX.length) afficher();
+});
+$("modes").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b || b.dataset.m === MODE) return;
+  MODE = b.dataset.m;
+  document.querySelectorAll("#modes button").forEach(x => x.classList.toggle("actif", x === b));
+  document.body.classList.toggle("mode-manger", MODE === "manger");
+  FILTRE = MODE === "manger" ? (new Date().getHours() < 6 || new Date().getHours() >= 23 ? "nuit" : "avant") : "tous";   // la nuit : fringale direct
+  document.querySelectorAll("#filtres button[data-f]").forEach(x => x.classList.toggle("actif", x.dataset.f === FILTRE));
+  $("videTitre") && ($("videTitre").textContent = MODE === "manger" ? "On mange où ?" : "Ce soir, on sort où ?");
+  $("videTexte") && ($("videTexte").innerHTML = MODE === "manger" ? "Touche <b>Autour de moi</b>.<br>Restos et fast-foods de la métropole lilloise, du plus proche au plus loin."
+                                                               : "Touche <b>Autour de moi</b> ou tape une ville.<br>Bars, pubs et boîtes de nuit, du plus proche au plus loin.");
+  LIEUX = [];
+  if (POS) chercher(POS.la, POS.lo, POS.lieuTexte); else { $("statut").textContent = ""; }
 });
 // ===== Garde l'appli et la liste en mémoire sur le téléphone (marche avec peu de réseau) =====
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

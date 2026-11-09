@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: "17 4 * * 1"
   workflow_dispatch:
+    inputs:
+      france:
+        description: "Retélécharger aussi les bars et clubs de toute la France (plus d'une heure)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,15 +32,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Télécharger les bars et clubs de France
-        if: github.event_name != 'push'      # seulement le lundi (ou lancé à la main) : ça prend plus d'une heure
+        if: github.event_name == 'schedule' || inputs.france      # seulement le lundi (ou à la demande) : plus d'une heure
         run: python3 scripts/lieux_france.py || echo "On garde la liste déjà enregistrée"
         timeout-minutes: 90
+      - name: Télécharger les restos de la métropole lilloise
+        if: github.event_name != 'push'
+        run: python3 scripts/restos_lille.py || echo "On garde la liste de restos déjà enregistrée"
       - name: Enregistrer la nouvelle liste dans le dépôt
         if: github.event_name != 'push'
         run: |
           if [ -n "$(git status --porcelain data)" ]; then
             git config user.name "github-actions[bot]"; git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A data && git commit -m "Mise à jour des lieux de France [skip ci]" && git push || true
+            git add -A data && git commit -m "Mise à jour des lieux [skip ci]" && git push || true
           fi
       - uses: actions/upload-pages-artifact@v3
         with:
