@@ -3,7 +3,7 @@
   "short_name": "Où sortir",
   "description": "Les bars, pubs et boîtes de nuit autour de soi, avec ce qui est ouvert maintenant",
   "lang": "fr",
-  "id": "./",
+  "id": "/ou-sortir/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
